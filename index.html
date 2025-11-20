@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 年 AI 技能趨勢：互動式星座圖</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 D3.js 繪圖庫 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 確保全域使用 Inter 字體 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc; /* light gray background */
+        }
+        /* 隱藏 D3 繪圖時的初始閃爍 */
+        #constellation-map {
+            width: 100%;
+            height: 80vh;
+        }
+        .cluster-node {
+            cursor: pointer;
+            transition: r 0.15s ease-in-out;
+        }
+        .skill-node {
+            cursor: pointer;
+            transition: r 0.15s ease-in-out;
+        }
+        .link {
+            stroke: #cbd5e1; /* slate-300 */
+            stroke-width: 1.5px;
+        }
+
+        /* Tooltip 樣式 */
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 10px;
+            font-size: 14px;
+            background: rgba(43, 44, 46, 0.95); /* Dark background with opacity */
+            color: #fff;
+            border-radius: 8px;
+            pointer-events: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+            line-height: 1.5;
+            z-index: 1000;
+        }
+        .tooltip strong {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 16px;
+            color: #93c5fd; /* blue-300 */
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
+        <header class="mb-6 border-b pb-4">
+            <h1 class="text-3xl font-bold text-gray-800">2025 年 AI 技能趨勢：互動式星座圖</h1>
+            <p class="text-gray-500 mt-1">基於 Notebook LM 提取的結構化洞察，由 Gemini 視覺化呈現 (點擊或懸停節點查看詳情)</p>
+        </header>
+
+        <!-- 圖例區塊 -->
+        <div id="legend" class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner">
+            <h3 class="font-semibold text-lg mb-2 text-blue-800">🎯 技能群集圖例</h3>
+            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm" id="legend-items">
+                <!-- D3 會在這裡插入圖例項目 -->
+            </div>
+        </div>
+        
+        <!-- D3 繪圖容器 -->
+        <div id="constellation-map" class="border rounded-lg shadow-inner bg-gray-50">
+            <!-- SVG 將由 D3.js 插入 -->
+        </div>
+
+        <!-- Tooltip 容器 -->
+        <div class="tooltip opacity-0" id="tooltip"></div>
+    </div>
+
+    <script>
+        // 案例三的結構化數據 (模擬 Notebook LM 輸出)
+        const data = [
+            { id: "LLM", name: "LLM 部署", cluster: "基礎模型與實施", hover: "將大型語言模型整合到生產環境中，確保效率和可擴展性。" },
+            { id: "Prompt", name: "提示工程", cluster: "基礎模型與實施", hover: "專注於設計最佳輸入指令以最大化模型輸出品質，為最核心的應用技能。", keyPosition: true },
+            { id: "FineTune", name: "模型微調", cluster: "基礎模型與實施", hover: "針對特定任務調整預訓練模型，以提高精準度。" },
+            { id: "Cloud", name: "雲端運算", cluster: "基礎模型與實施", hover: "掌握主流雲平台 (AWS/Azure/GCP) 的 AI 基礎設施服務。" },
+
+            { id: "MLOps", name: "MLOps", cluster: "數據工程與架構", hover: "建立和維護生產環境中機器學習模型的自動化工作流程，確保可靠性。", keyPosition: true },
+            { id: "DataPipe", name: "數據管線", cluster: "數據工程與架構", hover: "設計高效、可擴展的數據流動架構，支援模型訓練。" },
+            { id: "FeatEng", name: "特徵工程", cluster: "數據工程與架構", hover: "從原始數據中選擇、轉換和提取對模型有預測力的特徵。" },
+            { id: "VectorDB", name: "向量資料庫", cluster: "數據工程與架構", hover: "用於儲存和檢索高維向量，是 RAG (檢索增強生成) 應用的核心組件。" },
+
+            { id: "Ethics", name: "AI 倫理學", cluster: "倫理與治理", hover: "評估和解決 AI 系統在社會、法律和道德層面帶來的挑戰。（範例職位：AI 倫理學家）", keyPosition: true },
+            { id: "XAI", name: "可解釋性 AI", cluster: "倫理與治理", hover: "開發工具和方法來理解和解釋 AI 模型的決策過程。" },
+            { id: "Bias", name: "偏見緩解", cluster: "倫理與治理", hover: "識別、測量並修正模型中的系統性偏差，確保公平性。" },
+            { id: "Compliance", name: "法規遵循", cluster: "倫理與治理", hover: "確保 AI 應用符合 GDPR、AI Act 等國際與地區法規。" },
+
+            { id: "Value", name: "價值評估", cluster: "商業策略與應用", hover: "衡量 AI 專案對業務目標和投資回報率 (ROI) 的具體貢獻。", keyPosition: true },
+            { id: "Change", name: "變革管理", cluster: "商業策略與應用", hover: "引導組織和員工適應 AI 導入帶來的流程和文化變化。" },
+            { id: "Industry", name: "行業特定應用", cluster: "商業策略與應用", hover: "將 AI 應用於垂直行業（如 FinTech、醫療）的專業知識。" },
+
+            { id: "CrossFunc", name: "跨職能協作", cluster: "軟技能與溝通", hover: "在數據科學家、工程師和業務團隊之間建立有效溝通橋樑。", keyPosition: true },
+            { id: "Storytelling", name: "數據說故事", cluster: "軟技能與溝通", hover: "將複雜的數據洞察轉化為易於理解、有說服力的敘事。" },
+            
+            { id: "EdgeAI", name: "邊緣 AI", cluster: "前沿研究與探索", hover: "在本地設備而非雲端執行 AI 運算，以實現低延遲和高隱私。", keyPosition: true },
+            { id: "QML", name: "量子機器學習", cluster: "前沿研究與探索", hover: "探索使用量子計算原理加速機器學習的潛力。" }
+        ];
+
+        // 定義群集的顏色和中心點
+        const clusterCenters = {
+            "基礎模型與實施": { x: 0.3, y: 0.2, color: "#2563eb" }, // blue-700
+            "數據工程與架構": { x: 0.7, y: 0.2, color: "#f97316" }, // orange-600
+            "倫理與治理": { x: 0.15, y: 0.7, color: "#9333ea" }, // violet-700
+            "商業策略與應用": { x: 0.85, y: 0.7, color: "#10b981" }, // emerald-500
+            "軟技能與溝通": { x: 0.5, y: 0.5, color: "#64748b" }, // slate-500
+            "前沿研究與探索": { x: 0.5, y: 0.85, color: "#ef4444" } // red-500
+        };
+
+        const clusters = Object.keys(clusterCenters);
+        const colorScale = d3.scaleOrdinal()
+            .domain(clusters)
+            .range(clusters.map(c => clusterCenters[c].color));
+
+        // 準備數據給 D3
+        const nodes = data.map(d => ({
+            id: d.id,
+            name: d.name,
+            cluster: d.cluster,
+            hoverText: d.hover,
+            clusterColor: colorScale(d.cluster),
+            r: d.keyPosition ? 10 : 6 // 關鍵節點半徑較大
+        }));
+
+        // 創建連線 (Link)：每個技能節點連線到其群集中心點
+        const links = [];
+        nodes.forEach(node => {
+            // 這裡我們將技能節點連線到其所屬群集
+            links.push({
+                source: node.id,
+                target: node.cluster + '_CENTER', // 虛擬的中心點 ID
+                cluster: node.cluster
+            });
+        });
+
+        // 加入虛擬的群集中心節點，用於引導力導向圖
+        const centerNodes = clusters.map(c => ({
+            id: c + '_CENTER',
+            name: c,
+            cluster: c,
+            isCenter: true,
+            fx: clusterCenters[c].x, // 固定 x 座標
+            fy: clusterCenters[c].y, // 固定 y 座標
+            r: 0 // 實際繪圖中隱藏
+        }));
+
+        const allNodes = [...nodes, ...centerNodes];
+
+        // D3 繪圖初始化
+        const svg = d3.select("#constellation-map").append("svg")
+            .attr("width", "100%")
+            .attr("height", "100%")
+            .attr("viewBox", `0 0 1000 800`); // 固定 viewBox 方便力導向圖的座標轉換
+
+        const width = 1000;
+        const height = 800;
+
+        // Tooltip 元素
+        const tooltip = d3.select("#tooltip");
+
+        // Force Simulation (力導向圖)
+        const simulation = d3.forceSimulation(allNodes)
+            // 1. Link Force: 技能節點拉向其群集中心 (使用虛擬中心節點)
+            .force("link", d3.forceLink(links)
+                .id(d => d.id)
+                .distance(50) // 節點與中心的距離
+                .strength(0.5) // 連線強度
+            )
+            // 2. Center Force: 整個圖置中
+            .force("center", d3.forceCenter(width / 2, height / 2).strength(0.05))
+            // 3. Charge Force: 節點間排斥力，防止重疊
+            .force("charge", d3.forceManyBody().strength(-100))
+            // 4. Bounding Box: 將節點限制在 viewBox 內 (使用自訂的 force)
+            .force("bounding", () => {
+                for (let i = 0, n = allNodes.length; i < n; ++i) {
+                    const node = allNodes[i];
+                    node.x = Math.max(0, Math.min(width, node.x));
+                    node.y = Math.max(0, Math.min(height, node.y));
+                }
+            });
+
+        // 將虛擬中心節點的座標從 [0, 1] 轉換到 [0, width] / [0, height]
+        centerNodes.forEach(c => {
+            c.fx = c.fx * width;
+            c.fy = c.fy * height;
+        });
+
+
+        // 繪製連線 (Links)
+        const link = svg.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(links)
+            .enter().append("line")
+            .attr("class", d => `link link-${d.cluster.replace(/\s/g, '-')}`)
+            .attr("stroke", d => colorScale(d.cluster));
+
+
+        // 繪製技能節點 (Nodes)
+        const node = svg.append("g")
+            .attr("class", "nodes")
+            .selectAll("circle")
+            .data(nodes)
+            .enter().append("circle")
+            .attr("class", "skill-node")
+            .attr("r", d => d.r)
+            .attr("fill", d => d.clusterColor)
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended))
+            .on("mouseover", mouseover)
+            .on("mousemove", mousemove)
+            .on("mouseout", mouseout)
+            .on("click", clickNode);
+
+
+        // 繪製節點名稱 (Labels)
+        const labels = svg.append("g")
+            .attr("class", "labels")
+            .selectAll("text")
+            .data(nodes)
+            .enter().append("text")
+            .attr("dy", "0.35em")
+            .attr("font-size", d => d.r === 10 ? "11px" : "9px")
+            .attr("fill", "#374151") // gray-700
+            .attr("font-weight", d => d.r === 10 ? "bold" : "normal")
+            .text(d => d.name)
+            .style("pointer-events", "none"); // 讓點擊穿透到 circle
+
+        // 繪製群集中心點名稱 (Cluster Labels)
+        const clusterLabels = svg.append("g")
+            .attr("class", "cluster-labels")
+            .selectAll("text")
+            .data(centerNodes)
+            .enter().append("text")
+            .attr("dy", "-1em")
+            .attr("font-size", "14px")
+            .attr("fill", d => colorScale(d.cluster))
+            .attr("font-weight", "bold")
+            .attr("text-anchor", "middle")
+            .text(d => d.name)
+            .style("pointer-events", "none");
+
+
+        // 更新位置
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            labels
+                .attr("x", d => d.x + d.r + 2) // 文字稍微偏右
+                .attr("y", d => d.y);
+
+            clusterLabels
+                .attr("x", d => d.x)
+                .attr("y", d => d.y);
+        });
+
+        // ----------------- 事件處理 -----------------
+
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            // 允許節點在拖曳後自然移動，或設定 d.fx = null; d.fy = null;
+        }
+
+        function mouseover(event, d) {
+            // 顯示 Tooltip
+            tooltip.style("opacity", 1)
+                .html(`<strong>${d.name} (${d.cluster})</strong><p>${d.hoverText}</p>`);
+            
+            // 放大節點
+            d3.select(this).transition().duration(100).attr("r", d.r * 1.5);
+        }
+
+        function mousemove(event) {
+            // Tooltip 跟隨滑鼠
+            tooltip.style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 10) + "px");
+        }
+
+        function mouseout() {
+            // 隱藏 Tooltip
+            tooltip.style("opacity", 0);
+            
+            // 縮小節點
+            d3.select(this).transition().duration(100).attr("r", d => d.r);
+        }
+
+        function clickNode(event, d) {
+            // 點擊時，將節點資訊顯示在 console 或其他 UI 區域
+            console.log(`Node Clicked: ${d.name} - ${d.hoverText}`);
+            // 可以用於導航或彈出模態視窗
+        }
+
+        // ----------------- 圖例生成 -----------------
+        function renderLegend() {
+            const legendContainer = d3.select("#legend-items");
+            
+            clusters.forEach(cluster => {
+                const color = colorScale(cluster);
+                const item = legendContainer.append("div")
+                    .attr("class", "flex items-center space-x-2");
+                
+                item.append("span")
+                    .attr("class", "w-3 h-3 rounded-full shadow")
+                    .style("background-color", color);
+                
+                item.append("span")
+                    .text(cluster)
+                    .attr("class", "text-gray-700 font-medium");
+            });
+        }
+
+        window.onload = function () {
+            renderLegend();
+        }
+
+    </script>
+</body>
+</html>
